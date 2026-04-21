@@ -1,0 +1,43 @@
+# Data — never commit raw market data files
+data/itch-samples/*.gz
+data/itch-samples/*.pcap*
+data/itch-samples/*.zip
+data/itch/
+data/parquet/
+data/cache/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Test/coverage artifacts
+.hypothesis/
+
+# Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Generated artifacts
+docs/_build/
+*.log
