@@ -53,6 +53,35 @@ class OrderBook:
         asks = sorted(self._ask_qty.items(), key=lambda kv: kv[0])[:depth]
         return bids, asks
 
+    def snapshot_polars(self, depth: int = 10):
+        """Return a Polars DataFrame with the top ``depth`` levels each side.
+
+        Schema: ``level`` (1..depth), ``bid_price``, ``bid_qty``,
+        ``ask_price``, ``ask_qty``. Prices are floats in dollars.
+        Missing levels are zero-filled.
+        """
+        import polars as pl
+
+        bids, asks = self.top_of_book(depth=depth)
+        rows = []
+        for i in range(depth):
+            b = bids[i] if i < len(bids) else (0, 0)
+            a = asks[i] if i < len(asks) else (0, 0)
+            rows.append({
+                "level": i + 1,
+                "bid_price": b[0] / 10000.0,
+                "bid_qty": b[1],
+                "ask_price": a[0] / 10000.0,
+                "ask_qty": a[1],
+            })
+        return pl.DataFrame(rows, schema={
+            "level": pl.UInt8,
+            "bid_price": pl.Float64,
+            "bid_qty": pl.UInt32,
+            "ask_price": pl.Float64,
+            "ask_qty": pl.UInt32,
+        })
+
     def apply(self, ev: BookEvent) -> None:
         """Apply one BookEvent. Caller is responsible for symbol filtering.
 
