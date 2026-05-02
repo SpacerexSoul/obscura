@@ -28,6 +28,15 @@ def _level_qty(book: OrderBook, side: Side, price: int) -> int:
     return target.get(price, 0)
 
 
+def _current_mid(book: OrderBook) -> int:
+    """Current mid price (1/10000 dollars). Returns 0 if either side empty."""
+    bb = book.best_bid()
+    ba = book.best_ask()
+    if bb is None or ba is None:
+        return 0
+    return (bb[0] + ba[0]) // 2
+
+
 def _fill_my_order(
     order: MyOrder,
     fillable: int,
@@ -35,6 +44,7 @@ def _fill_my_order(
     timestamp_ns: int,
     cause: str,
     result: SimResult,
+    mid_at_fill: int,
 ) -> None:
     if fillable <= 0:
         return
@@ -53,6 +63,7 @@ def _fill_my_order(
             price=fill_price,
             timestamp_ns=timestamp_ns,
             cause=cause,
+            mid_at_fill=mid_at_fill,
         )
     )
 
@@ -103,10 +114,14 @@ def _update_my_orders_on_event(
             continue
         if order.side is not affected_side or order.price != affected_price:
             continue
+        was_queued = order.queue_position > 0
         if is_trade:
             queue_model.on_trade(order, size)
         else:
             queue_model.on_cancel(order, size, level_qty_before)
+
+        if was_queued and order.queue_position <= 0 and order.mid_at_queue_head == 0:
+            order.mid_at_queue_head = _current_mid(book)
 
         f = fillable_qty(order)
         if f > 0:
@@ -117,6 +132,7 @@ def _update_my_orders_on_event(
                 timestamp_ns=event.timestamp_ns,
                 cause="queue_drained",
                 result=result,
+                mid_at_fill=_current_mid(book),
             )
 
 
@@ -130,6 +146,12 @@ def _apply_strategy_action(
         if action.side is None:
             raise ValueError("PLACE_LIMIT requires side")
         level_qty = _level_qty(book, action.side, action.price)
+        bb = book.best_bid()
+        ba = book.best_ask()
+        mid = _current_mid(book)
+        opposite = ba[0] if (action.side is Side.BUY and ba is not None) else (
+            bb[0] if (action.side is Side.SELL and bb is not None) else 0
+        )
         my_orders[action.synthetic_id] = MyOrder(
             synthetic_id=action.synthetic_id,
             side=action.side,
@@ -138,6 +160,8 @@ def _apply_strategy_action(
             placed_at_ns=timestamp_ns,
             queue_position=float(level_qty),
             initial_level_qty=level_qty,
+            mid_at_placement=mid,
+            best_opposite_at_placement=opposite,
         )
     elif action.kind is ActionKind.CANCEL:
         order = my_orders.get(action.synthetic_id)

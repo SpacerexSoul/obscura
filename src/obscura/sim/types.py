@@ -48,6 +48,11 @@ class MyOrder:
     cancelled: bool = False
     cancelled_at_ns: int = 0
     initial_level_qty: int = 0  # qty at level immediately after we joined
+    # Slippage-attribution context, populated by the simulator at placement and
+    # at the moment the queue first drains. Mids are in 1/10000 dollars.
+    mid_at_placement: int = 0
+    best_opposite_at_placement: int = 0
+    mid_at_queue_head: int = 0   # 0 until queue_position first transitions ≤ 0
 
     @property
     def remaining(self) -> int:
@@ -68,6 +73,7 @@ class Fill:
     price: int
     timestamp_ns: int
     cause: str  # "queue_drained" | "swept" — informational
+    mid_at_fill: int = 0  # mid at the moment the fill happened, 1/10000 dollars
 
 
 @dataclass
