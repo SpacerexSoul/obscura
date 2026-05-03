@@ -76,12 +76,27 @@ class Fill:
     mid_at_fill: int = 0  # mid at the moment the fill happened, 1/10000 dollars
 
 
+@dataclass(frozen=True, slots=True)
+class Snapshot:
+    """Lightweight checkpoint of book + my-orders state, for dashboard playback."""
+
+    timestamp_ns: int
+    best_bid_price: int
+    best_bid_qty: int
+    best_ask_price: int
+    best_ask_qty: int
+    cash_change: int
+    inventory: int
+    my_order_states: tuple[tuple[int, float, int, int], ...] = ()
+
+
 @dataclass
 class SimResult:
     fills: list[Fill] = field(default_factory=list)
     my_orders: dict[int, MyOrder] = field(default_factory=dict)
     cash_change: int = 0   # signed integer in 1/10000 dollars
     inventory: int = 0     # net shares held (positive = long)
+    snapshots: list[Snapshot] = field(default_factory=list)
 
     @property
     def gross_pnl_per_10000(self) -> int:

@@ -167,6 +167,28 @@ def test_my_order_does_not_corrupt_book_invariants():
     assert isinstance(result.fills, list)
 
 
+def test_snapshots_captured_at_configured_cadence():
+    events = [
+        _add(1, Side.BUY, 500, 10000, ts=1),
+        _add(2, Side.SELL, 50, 10010, ts=2),
+        _execute(1, 100, ts=10_000_000),
+        _execute(1, 50, ts=20_000_000),
+        _execute(1, 50, ts=30_000_000),
+        _execute(1, 50, ts=40_000_000),
+        _execute(1, 50, ts=50_000_000),
+    ]
+    result = run(iter(events), NoOpStrategy(), symbol="X", snapshot_every=2)
+    assert len(result.snapshots) == 4
+    last = result.snapshots[-1]
+    assert last.timestamp_ns >= 50_000_000
+
+
+def test_snapshots_default_off():
+    events = [_add(1, Side.BUY, 100, 10000, ts=1), _add(2, Side.SELL, 50, 10010, ts=2)]
+    result = run(iter(events), NoOpStrategy(), symbol="X")
+    assert result.snapshots == []
+
+
 def test_fill_lifecycle_emits_fill_records():
     events = [
         _add(1, Side.BUY, 500, 10000, ts=1),

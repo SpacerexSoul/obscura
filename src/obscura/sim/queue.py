@@ -55,3 +55,22 @@ def fillable_qty(order: MyOrder) -> int:
         return 0
     deficit = int(-order.queue_position)
     return min(order.remaining, max(deficit, order.remaining))
+
+
+@dataclass
+class InstantFillQueueModel:
+    """Naive queue model that ignores priority — fills on the FIRST trade.
+
+    This is the implicit assumption in vectorised backtesters and most
+    "if-price-touches-then-fill" simulators. Use it as the **baseline** in
+    obscura's honesty-gap comparison: same strategy, same data, two queue
+    models, two PnLs. The delta is queue priority you weren't paying for.
+    """
+
+    def on_trade(self, order: MyOrder, traded_shares: int) -> None:
+        # The first trade at our level fills us immediately.
+        order.queue_position = 0.0
+
+    def on_cancel(self, order: MyOrder, cancelled_shares: int, level_qty_before: int) -> None:
+        # Cancels don't move us forward in this model — only trades fill.
+        return

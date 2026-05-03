@@ -94,6 +94,83 @@ def _cmd_book(args: argparse.Namespace) -> int:
     return 0
 
 
+def _arrays_to_events(filtered, max_events: int):
+    """Materialise filtered ItchArrays back into BookEvent objects."""
+    from obscura.book.types import BookEvent, MessageType, Side
+    type_map = {
+        ord("A"): MessageType.ADD, ord("F"): MessageType.ADD_MPID,
+        ord("E"): MessageType.EXECUTE, ord("C"): MessageType.EXECUTE_PRICE,
+        ord("X"): MessageType.CANCEL, ord("D"): MessageType.DELETE,
+        ord("U"): MessageType.REPLACE,
+    }
+    msg_type = filtered["msg_type"]
+    timestamp_ns = filtered["timestamp_ns"]
+    order_id = filtered["order_id"]
+    side = filtered["side"]
+    shares = filtered["shares"]
+    price = filtered["price"]
+    new_order_id = filtered["new_order_id"]
+    new_shares = filtered["new_shares"]
+    new_price = filtered["new_price"]
+    n = min(len(msg_type), max_events) if max_events else len(msg_type)
+    for i in range(n):
+        t = type_map.get(int(msg_type[i]))
+        if t is None:
+            continue
+        s = None
+        if t in (MessageType.ADD, MessageType.ADD_MPID):
+            s = Side.BUY if side[i] == ord("B") else Side.SELL
+        yield BookEvent(
+            msg_type=t, timestamp_ns=int(timestamp_ns[i]), order_id=int(order_id[i]),
+            side=s, shares=int(shares[i]), price=int(price[i]), stock="",
+            new_order_id=int(new_order_id[i]), new_shares=int(new_shares[i]),
+            new_price=int(new_price[i]),
+        )
+
+
+def _cmd_honesty_gap(args: argparse.Namespace) -> int:
+    """Run the same strategy under naive vs queue-aware fills."""
+    from obscura.analysis import compare_queue_models
+    from obscura.book import filter_to_locate, parse_itch_to_arrays, symbol_to_locate
+    from obscura.sim import Latency
+    from obscura.strategies import MeanReversion, OBISignal, PennyMM
+
+    path = Path(args.path)
+    if not path.exists():
+        print(f"not found: {path}", file=sys.stderr)
+        return 1
+
+    print(f"parsing {path.name} ...", file=sys.stderr)
+    arrays = parse_itch_to_arrays(path, capacity=20_000_000)
+    locate = symbol_to_locate(arrays, args.symbol)
+    if locate is None:
+        avail = ", ".join(list(arrays["locate_to_symbol"].values())[:8])
+        print(f"symbol {args.symbol} not in slice. some present: {avail}", file=sys.stderr)
+        return 1
+    filtered = filter_to_locate(arrays, locate)
+
+    strat_factory = {
+        "PennyMM": lambda: PennyMM(shares=args.shares),
+        "OBISignal": lambda: OBISignal(depth=5, threshold=0.4, shares=args.shares),
+        "MeanReversion": lambda: MeanReversion(warmup=200, z_entry=2.0, z_exit=0.3, shares=args.shares),
+    }[args.strategy]
+
+    rep = compare_queue_models(
+        events_factory=lambda: _arrays_to_events(filtered, args.limit),
+        strategy_factory=strat_factory,
+        symbol=args.symbol,
+        strategy_name=args.strategy,
+        latency=Latency(network_ns=int(args.latency_ms * 1_000_000)),
+    )
+
+    md = rep.to_markdown()
+    if args.out:
+        Path(args.out).write_text(md)
+        print(f"wrote {args.out}", file=sys.stderr)
+    print(md)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="obscura", description="Pure-Python order-book replay.")
     parser.add_argument("--version", action="version", version=f"obscura {__version__}")
@@ -116,6 +193,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_book.add_argument("--depth", type=int, default=5)
     p_book.add_argument("--limit", type=int, default=0)
     p_book.set_defaults(func=_cmd_book)
+
+    p_hg = sub.add_parser("analyze", help="Honesty-gap report (naive vs queue-aware fills).")
+    p_hg_sub = p_hg.add_subparsers(dest="analyze_cmd", required=True)
+    p_hg_gap = p_hg_sub.add_parser("honesty-gap")
+    p_hg_gap.add_argument("path", help="Path to .NASDAQ_ITCH50.gz file")
+    p_hg_gap.add_argument("--symbol", required=True)
+    p_hg_gap.add_argument("--strategy", choices=["PennyMM", "OBISignal", "MeanReversion"], default="PennyMM")
+    p_hg_gap.add_argument("--shares", type=int, default=10)
+    p_hg_gap.add_argument("--limit", type=int, default=200_000)
+    p_hg_gap.add_argument("--latency-ms", type=float, default=1.0)
+    p_hg_gap.add_argument("--out", help="Optional path to write the markdown report")
+    p_hg_gap.set_defaults(func=_cmd_honesty_gap)
 
     args = parser.parse_args(argv)
     return args.func(args)

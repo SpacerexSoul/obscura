@@ -1,4 +1,5 @@
-"""Post-simulation analysis: slippage attribution, PnL decomposition."""
+"""Post-simulation analysis: slippage attribution, PnL decomposition, honesty-gap."""
+from obscura.analysis.honesty_gap import HonestyGapReport, compare_queue_models
 from obscura.analysis.slippage import (
     FillAttribution,
     SlippageReport,
@@ -8,7 +9,9 @@ from obscura.analysis.slippage import (
 
 __all__ = [
     "FillAttribution",
+    "HonestyGapReport",
     "SlippageReport",
     "attribute_fill",
     "attribute_result",
+    "compare_queue_models",
 ]

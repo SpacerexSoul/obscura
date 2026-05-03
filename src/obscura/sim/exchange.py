@@ -20,7 +20,7 @@ from obscura.book.book import OrderBook
 from obscura.book.types import BookEvent, MessageType, Side
 from obscura.sim.latency import Latency
 from obscura.sim.queue import ProbabilisticQueueModel, fillable_qty
-from obscura.sim.types import Action, ActionKind, Fill, MyOrder, SimResult, Strategy
+from obscura.sim.types import Action, ActionKind, Fill, MyOrder, SimResult, Snapshot, Strategy
 
 
 def _level_qty(book: OrderBook, side: Side, price: int) -> int:
@@ -170,6 +170,28 @@ def _apply_strategy_action(
             order.cancelled_at_ns = timestamp_ns
 
 
+def _snapshot(book: OrderBook, result: SimResult, ts: int) -> Snapshot:
+    bb = book.best_bid()
+    ba = book.best_ask()
+    bbp, bbq = bb if bb is not None else (0, 0)
+    bap, baq = ba if ba is not None else (0, 0)
+    states = tuple(
+        (o.synthetic_id, o.queue_position, o.filled_qty, o.price)
+        for o in result.my_orders.values()
+        if not o.cancelled
+    )
+    return Snapshot(
+        timestamp_ns=ts,
+        best_bid_price=bbp,
+        best_bid_qty=bbq,
+        best_ask_price=bap,
+        best_ask_qty=baq,
+        cash_change=result.cash_change,
+        inventory=result.inventory,
+        my_order_states=states,
+    )
+
+
 def run(
     events: Iterable[BookEvent],
     strategy: Strategy,
@@ -177,10 +199,13 @@ def run(
     symbol: str,
     latency: Latency | None = None,
     queue_model: ProbabilisticQueueModel | None = None,
+    snapshot_every: int = 0,
 ) -> SimResult:
     """Drive ``strategy`` against the ``events`` stream for ``symbol``.
 
-    Caller is responsible for filtering ``events`` to a single symbol.
+    Caller is responsible for filtering ``events`` to a single symbol. Pass
+    ``snapshot_every=N`` to capture a Snapshot every N events for the
+    dashboard's playback view; default 0 disables snapshotting.
     """
     latency = latency or Latency()
     queue_model = queue_model or ProbabilisticQueueModel()
@@ -189,7 +214,7 @@ def run(
     pending: list[tuple[int, int, Action]] = []  # (arrives_at, seq, action)
     seq = 0
 
-    for event in events:
+    for n_events, event in enumerate(events, start=1):
         while pending and pending[0][0] <= event.timestamp_ns:
             _, _, action = heapq.heappop(pending)
             _apply_strategy_action(action, book, result.my_orders, event.timestamp_ns)
@@ -204,5 +229,10 @@ def run(
             arrives_at = event.timestamp_ns + latency()
             heapq.heappush(pending, (arrives_at, seq, a))
 
+        if snapshot_every > 0 and n_events % snapshot_every == 0:
+            result.snapshots.append(_snapshot(book, result, event.timestamp_ns))
+
     pending.clear()
+    if snapshot_every > 0:
+        result.snapshots.append(_snapshot(book, result, book.last_timestamp_ns))
     return result
