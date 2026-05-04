@@ -97,6 +97,7 @@ class SimResult:
     cash_change: int = 0   # signed integer in 1/10000 dollars
     inventory: int = 0     # net shares held (positive = long)
     snapshots: list[Snapshot] = field(default_factory=list)
+    final_mid: int = 0     # mid at end of stream (1/10000 dollars), 0 if N/A
 
     @property
     def gross_pnl_per_10000(self) -> int:
@@ -105,6 +106,11 @@ class SimResult:
 
     def mark_to_market(self, mid_price: int) -> int:
         return self.cash_change + self.inventory * mid_price
+
+    @property
+    def marked_pnl(self) -> int:
+        """Cash change + open inventory marked at final_mid. Honest P&L."""
+        return self.cash_change + self.inventory * self.final_mid
 
 
 @runtime_checkable

@@ -86,7 +86,8 @@ def test_markdown_report_has_summary_table():
     assert "# obscura honesty-gap report" in md
     assert "Naive (instant fill)" in md
     assert "Queue-aware (Cont 2010)" in md
-    assert "Realised PnL" in md
+    assert "Realised cash" in md
+    assert "Marked P&L" in md
 
 
 def test_pnl_gap_signed():

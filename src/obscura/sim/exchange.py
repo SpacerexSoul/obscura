@@ -123,17 +123,20 @@ def _update_my_orders_on_event(
         if was_queued and order.queue_position <= 0 and order.mid_at_queue_head == 0:
             order.mid_at_queue_head = _current_mid(book)
 
-        f = fillable_qty(order)
-        if f > 0:
-            _fill_my_order(
-                order,
-                f,
-                fill_price=order.price,
-                timestamp_ns=event.timestamp_ns,
-                cause="queue_drained",
-                result=result,
-                mid_at_fill=_current_mid(book),
-            )
+        # Only **trades** actually execute against our order. Cancels move us
+        # forward in the queue but do not fill us — that takes a real trade.
+        if is_trade:
+            f = fillable_qty(order)
+            if f > 0:
+                _fill_my_order(
+                    order,
+                    f,
+                    fill_price=order.price,
+                    timestamp_ns=event.timestamp_ns,
+                    cause="queue_drained",
+                    result=result,
+                    mid_at_fill=_current_mid(book),
+                )
 
 
 def _apply_strategy_action(
@@ -233,6 +236,8 @@ def run(
             result.snapshots.append(_snapshot(book, result, event.timestamp_ns))
 
     pending.clear()
+    # Final mid for honest mark-to-market accounting.
+    result.final_mid = _current_mid(book)
     if snapshot_every > 0:
         result.snapshots.append(_snapshot(book, result, book.last_timestamp_ns))
     return result
